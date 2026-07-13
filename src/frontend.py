@@ -4,8 +4,8 @@
 
 依赖:
   - pystray   (系统托盘)
-  - Pillow    (托盘图标生成，LangChainAgent venv 已有)
-  - pywin32   (热键注册 + 剪贴板，LangChainAgent venv 已有)
+  - Pillow    (托盘图标生成)
+  - pywin32   (热键注册 + 剪贴板)
   - tkinter   (弹窗界面，Python 内置)
 """
 import sys

@@ -27,7 +27,7 @@ HOTKEY_LABEL = "Ctrl + Alt + D"
 # ===== 前端 - 弹窗 =====
 POPUP_WIDTH = 440
 POPUP_HEIGHT = 260
-POPUP_TIMEOUT_MS = 10000  # 自动关闭（毫秒）
+POPUP_TIMEOUT_MS = 1000000  # 自动关闭（毫秒）
 
 # 配色（Catppuccin Mocha 风格暗色主题）
 POPUP_BG = "#1e1e2e"          # 背景色
