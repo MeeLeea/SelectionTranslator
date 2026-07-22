@@ -285,6 +285,8 @@ class TranslateApp:
         self.icon = None
         self.busy = False
         self._last_translation = ""
+        self._drag_start_x = 0
+        self._drag_start_y = 0
 
         # 轮询队列（线程间通信）
         self.root.after(80, self._poll)
@@ -378,6 +380,17 @@ class TranslateApp:
             self.popup_win = None
             self.popup_body = None
 
+    def _start_drag_popup(self, event):
+        self._drag_start_x = event.x
+        self._drag_start_y = event.y
+
+    def _drag_popup(self, event):
+        if not self.popup_win:
+            return
+        x = self.popup_win.winfo_x() + event.x - self._drag_start_x
+        y = self.popup_win.winfo_y() + event.y - self._drag_start_y
+        self.popup_win.geometry(f"+{x}+{y}")
+
     def _create_popup(self, original):
         """创建弹窗基础结构，返回 (win, body_text_widget)"""
         self._close_popup()
@@ -408,15 +421,21 @@ class TranslateApp:
         header.pack_propagate(False)
 
         title = TRANSLATE_MODES.get(self.mode, "翻译")
-        tk.Label(header, text=f"  译  ·  {title}", bg=POPUP_HEADER_BG,
-                 fg=POPUP_DIM, font=("Microsoft YaHei UI", 8)).pack(
-            side="left", padx=4)
+        title_lbl = tk.Label(header, text=f"  译  ·  {title}", bg=POPUP_HEADER_BG,
+                             fg=POPUP_DIM, font=("Microsoft YaHei UI", 8),
+                             cursor="fleur")
+        title_lbl.pack(side="left", padx=4)
 
         close_lbl = tk.Label(header, text="  ✕  ", bg=POPUP_HEADER_BG,
                              fg=POPUP_DIM, font=("Microsoft YaHei UI", 9),
                              cursor="hand2")
         close_lbl.pack(side="right")
         close_lbl.bind("<Button-1>", lambda e: self._close_popup())
+
+        header.bind("<Button-1>", self._start_drag_popup)
+        header.bind("<B1-Motion>", self._drag_popup)
+        title_lbl.bind("<Button-1>", self._start_drag_popup)
+        title_lbl.bind("<B1-Motion>", self._drag_popup)
 
         # ---- 内容区 ----
         inner = tk.Frame(win, bg=POPUP_BG)
