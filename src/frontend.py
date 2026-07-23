@@ -380,6 +380,13 @@ class TranslateApp:
             self.popup_win = None
             self.popup_body = None
 
+    def _get_virtual_screen_bounds(self):
+        left = win32api.GetSystemMetrics(win32con.SM_XVIRTUALSCREEN)
+        top = win32api.GetSystemMetrics(win32con.SM_YVIRTUALSCREEN)
+        width = win32api.GetSystemMetrics(win32con.SM_CXVIRTUALSCREEN)
+        height = win32api.GetSystemMetrics(win32con.SM_CYVIRTUALSCREEN)
+        return left, top, left + width, top + height
+
     def _start_drag_popup(self, event):
         self._drag_start_x = event.x
         self._drag_start_y = event.y
@@ -400,19 +407,18 @@ class TranslateApp:
         win.attributes("-topmost", True)
         win.configure(bg=POPUP_BORDER)
 
-        # 定位到鼠标附近
         try:
             pt = win32api.GetCursorPos()
             mx, my = pt[0] + 14, pt[1] + 14
         except Exception:
             mx, my = 100, 100
-        sw = win.winfo_screenwidth()
-        sh = win.winfo_screenheight()
-        if mx + POPUP_WIDTH > sw:
-            mx = max(10, sw - POPUP_WIDTH - 10)
-        if my + POPUP_HEIGHT > sh:
-            my = max(10, sh - POPUP_HEIGHT - 10)
-        # 先用默认高度占位，后续自适应
+        left, top, right, bottom = self._get_virtual_screen_bounds()
+        min_x = left + 10
+        min_y = top + 10
+        max_x = max(min_x, right - POPUP_WIDTH - 10)
+        max_y = max(min_y, bottom - POPUP_HEIGHT - 10)
+        mx = min(max(mx, min_x), max_x)
+        my = min(max(my, min_y), max_y)
         win.geometry(f"{POPUP_WIDTH}x{POPUP_HEIGHT}+{mx}+{my}")
 
         # ---- 头部栏 ----
@@ -496,12 +502,30 @@ class TranslateApp:
         # 每行约 22px + 头部 26px + 内边距 20px
         h = min(max(lines * 22 + 50, 90), 420)
 
-        # 重新获取位置（保持原位置）
-        geom = win.geometry()
-        # geom 格式: WxH+X+Y，保留 +X+Y 部分
-        plus_idx = geom.find("+")
-        x_y = geom[plus_idx:] if plus_idx >= 0 else "+10+10"
-        win.geometry(f"{POPUP_WIDTH}x{h}{x_y}")
+        if self.popup_win:
+            try:
+                current_w = self.popup_win.winfo_width() or POPUP_WIDTH
+                current_h = self.popup_win.winfo_height() or h
+                left, top, right, bottom = self._get_virtual_screen_bounds()
+                geom = self.popup_win.geometry()
+                plus_idx = geom.find("+")
+                x = self.popup_win.winfo_x()
+                y = self.popup_win.winfo_y()
+                if plus_idx >= 0:
+                    pos = geom[plus_idx:]
+                    try:
+                        x_str, y_str = pos[1:].split("+")
+                        x = int(x_str)
+                        y = int(y_str)
+                    except Exception:
+                        pass
+                max_x = max(left + 10, right - current_w - 10)
+                max_y = max(top + 10, bottom - h - 10)
+                x = min(max(x, left + 10), max_x)
+                y = min(max(y, top + 10), max_y)
+                self.popup_win.geometry(f"{current_w}x{h}+{x}+{y}")
+            except Exception:
+                self.popup_win.geometry(f"{POPUP_WIDTH}x{h}+10+10")
 
     def _show_loading(self, original):
         win, body = self._create_popup(original)
