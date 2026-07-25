@@ -486,7 +486,7 @@ class TranslateApp:
         return win, body
 
     def _auto_resize(self, win, body):
-        """根据内容自适应弹窗高度"""
+        """根据内容自适应弹窗高度，并限制在虚拟桌面范围内"""
         win.update_idletasks()
         try:
             result = body.count("1.0", "end-1c", "displaylines")
@@ -502,56 +502,47 @@ class TranslateApp:
         # 每行约 22px + 头部 26px + 内边距 20px
         h = min(max(lines * 22 + 50, 90), 420)
 
-        if self.popup_win:
-            try:
-                current_w = self.popup_win.winfo_width() or POPUP_WIDTH
-                current_h = self.popup_win.winfo_height() or h
-                left, top, right, bottom = self._get_virtual_screen_bounds()
-                geom = self.popup_win.geometry()
-                plus_idx = geom.find("+")
-                x = self.popup_win.winfo_x()
-                y = self.popup_win.winfo_y()
-                if plus_idx >= 0:
-                    pos = geom[plus_idx:]
-                    try:
-                        x_str, y_str = pos[1:].split("+")
-                        x = int(x_str)
-                        y = int(y_str)
-                    except Exception:
-                        pass
-                max_x = max(left + 10, right - current_w - 10)
-                max_y = max(top + 10, bottom - h - 10)
-                x = min(max(x, left + 10), max_x)
-                y = min(max(y, top + 10), max_y)
-                self.popup_win.geometry(f"{current_w}x{h}+{x}+{y}")
-            except Exception:
-                self.popup_win.geometry(f"{POPUP_WIDTH}x{h}+10+10")
+        # 保持原位置，按虚拟桌面边界夹紧
+        w = win.winfo_width() or POPUP_WIDTH
+        x = win.winfo_x()
+        y = win.winfo_y()
+        left, top, right, bottom = self._get_virtual_screen_bounds()
+        x = min(max(x, left + 10), max(left + 10, right - w - 10))
+        y = min(max(y, top + 10), max(top + 10, bottom - h - 10))
+        win.geometry(f"{w}x{h}+{x}+{y}")
 
-    def _show_loading(self, original):
-        win, body = self._create_popup(original)
-        if original:
-            body.insert("end", "原文\n", "label")
-            body.insert("end", original[:300] + ("\n…" if len(original) > 300 else "") + "\n\n", "original")
-        body.insert("end", "正在翻译…", "msg")
-        body.config(state="disabled")
-        self._auto_resize(win, body)
+    def _insert_original(self, body, original):
+        """向 body 插入原文区域（带标签），仅在 original 非空时插入"""
+        if not original:
+            return
+        body.insert("end", "原文\n", "label")
+        preview = original[:300] + ("\n…" if len(original) > 300 else "")
+        body.insert("end", preview + "\n\n", "original")
 
+    def _schedule_auto_close(self, ms):
+        """重置自动关闭计时器"""
         if self.timeout_id:
             try:
                 self.root.after_cancel(self.timeout_id)
             except Exception:
                 pass
-        # 加载状态不自动关闭（等结果）
-        self.timeout_id = self.root.after(30000, self._close_popup)
+        self.timeout_id = self.root.after(ms, self._close_popup)
+
+    def _show_loading(self, original):
+        win, body = self._create_popup(original)
+        self._insert_original(body, original)
+        body.insert("end", "正在翻译…", "msg")
+        body.config(state="disabled")
+        self._auto_resize(win, body)
+        # 加载状态给较长超时（等结果）
+        self._schedule_auto_close(POPUP_TIMEOUT_MS)
 
     # ---- 流式显示 ----
     def _show_stream_start(self, original, first_chunk):
         """首个 token 到达：将 loading 替换为流式翻译区"""
         if not self.popup_body:
             win, body = self._create_popup(original)
-            if original:
-                body.insert("end", "原文\n", "label")
-                body.insert("end", original[:300] + ("\n…" if len(original) > 300 else "") + "\n\n", "original")
+            self._insert_original(body, original)
             body.insert("end", "翻译\n", "label")
             body.insert("end", first_chunk, "translation")
             body.config(state="disabled")
@@ -561,9 +552,7 @@ class TranslateApp:
             body = self.popup_body
             body.config(state="normal")
             body.delete("1.0", "end")
-            if original:
-                body.insert("end", "原文\n", "label")
-                body.insert("end", original[:300] + ("\n…" if len(original) > 300 else "") + "\n\n", "original")
+            self._insert_original(body, original)
             body.insert("end", "翻译\n", "label")
             body.insert("end", first_chunk, "translation")
             body.config(state="disabled")
@@ -577,7 +566,6 @@ class TranslateApp:
         body.config(state="normal")
         body.insert("end", chunk, "translation")
         body.config(state="disabled")
-        # 节流自适应高度（避免每个 token 都重算）
         self._auto_resize(self.popup_win, body)
 
     def _show_stream_done(self, full_translation):
@@ -589,80 +577,15 @@ class TranslateApp:
             body.insert("end", "\n\n双击复制译文 · Esc 关闭", "label")
             body.config(state="disabled")
             self._auto_resize(self.popup_win, body)
-
-        if self.timeout_id:
-            try:
-                self.root.after_cancel(self.timeout_id)
-            except Exception:
-                pass
-        self.timeout_id = self.root.after(POPUP_TIMEOUT_MS, self._close_popup)
-
-    def _show_result(self, original, result):
-        win, body = self._create_popup(original)
-
-        # 原文
-        body.insert("end", "原文\n", "label")
-        body.insert("end", original[:300] + ("\n…" if len(original) > 300 else "") + "\n\n", "original")
-
-        # 翻译
-        body.insert("end", "翻译\n", "label")
-        translation = result.get("translation", "(无结果)")
-        self._last_translation = translation
-        body.insert("end", translation + "\n", "translation")
-
-        # 释义
-        explanation = result.get("explanation", "")
-        if explanation:
-            body.insert("end", "\n释义\n", "label")
-            body.insert("end", explanation + "\n", "explain")
-
-        # 单词模式额外字段
-        phonetic = result.get("phonetic", "")
-        if phonetic:
-            body.insert("end", f"\n音标  /{phonetic}/\n", "explain")
-        pos = result.get("pos", "")
-        if pos:
-            body.insert("end", f"词性  {pos}\n", "explain")
-        examples = result.get("examples", [])
-        if examples:
-            body.insert("end", "\n例句\n", "label")
-            for ex in examples[:3]:
-                body.insert("end", f"  • {ex}\n", "explain")
-
-        # 语言对
-        src = result.get("source_lang", "")
-        tgt = result.get("target_lang", "")
-        if src or tgt:
-            body.insert("end", f"\n{src} → {tgt}\n", "explain")
-
-        # 提示
-        body.insert("end", "\n双击复制翻译 · Esc 关闭", "label")
-
-        body.config(state="disabled")
-        self._auto_resize(win, body)
-
-        if self.timeout_id:
-            try:
-                self.root.after_cancel(self.timeout_id)
-            except Exception:
-                pass
-        self.timeout_id = self.root.after(POPUP_TIMEOUT_MS, self._close_popup)
+        self._schedule_auto_close(POPUP_TIMEOUT_MS)
 
     def _show_message(self, original, message, error=False):
         win, body = self._create_popup(original)
-        if original:
-            body.insert("end", "原文\n", "label")
-            body.insert("end", original[:300] + ("\n…" if len(original) > 300 else "") + "\n\n", "original")
+        self._insert_original(body, original)
         body.insert("end", message, "error_msg" if error else "msg")
         body.config(state="disabled")
         self._auto_resize(win, body)
-
-        if self.timeout_id:
-            try:
-                self.root.after_cancel(self.timeout_id)
-            except Exception:
-                pass
-        self.timeout_id = self.root.after(POPUP_TIMEOUT_MS, self._close_popup)
+        self._schedule_auto_close(POPUP_TIMEOUT_MS)
 
     def _copy_translation(self):
         if self._last_translation:

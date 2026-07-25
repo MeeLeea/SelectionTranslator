@@ -20,14 +20,14 @@ _initialized = False
 
 def setup_logging(level=logging.INFO):
     """初始化全局日志（幂等，重复调用不会重复添加 handler）"""
-    root = logging.getLogger()
-    # 已有 handler 则不重复添加（防止日志重复输出）
-    if root.handlers:
-        root.setLevel(level)
+    global _initialized
+    if _initialized:
+        logging.getLogger().setLevel(level)
         return
 
     # 确保日志目录存在
     os.makedirs(LOG_DIR, exist_ok=True)
+    root = logging.getLogger()
     root.setLevel(level)
 
     # 控制台输出
@@ -42,6 +42,8 @@ def setup_logging(level=logging.INFO):
     )
     fh.setFormatter(logging.Formatter(_FMT, _DATEFMT))
     root.addHandler(fh)
+
+    _initialized = True
 
 
 def get_logger(name: str) -> logging.Logger:

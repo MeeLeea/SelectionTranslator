@@ -273,9 +273,3 @@ def run_server():
     log.info("POST /translate         - 翻译(JSON)")
     log.info("POST /translate_stream  - 流式翻译(SSE,最快)")
     server.serve_forever()
-
-
-if __name__ == "__main__":
-    from logger import setup_logging
-    setup_logging()
-    run_server()
