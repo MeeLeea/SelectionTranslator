@@ -183,11 +183,3 @@ class LLMClient:
             return cfg.get(provider, {}).get(field)
         except (json.JSONDecodeError, IOError):
             return None
-
-
-def create_client(
-    provider: str = "zhipu",
-    config_file: Optional[str] = None,
-) -> LLMClient:
-    """便捷工厂函数"""
-    return LLMClient(provider=provider, config_file=config_file)
