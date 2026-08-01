@@ -9,35 +9,6 @@ from typing import List, Dict, Optional
 from openai import OpenAI
 
 
-# 提供商预设（均兼容 OpenAI API 格式）
-PROVIDERS = {
-    "zhipu": {
-        "name": "智谱AI",
-        "base_url": "https://open.bigmodel.cn/api/paas/v4/",
-        "env_key": "ZHIPU_API_KEY",
-        "default_model": "glm-4-flash",
-    },
-    "deepseek": {
-        "name": "DeepSeek",
-        "base_url": "https://api.deepseek.com",
-        "env_key": "DEEPSEEK_API_KEY",
-        "default_model": "deepseek-chat",
-    },
-    "qwen": {
-        "name": "通义千问",
-        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "env_key": "DASHSCOPE_API_KEY",
-        "default_model": "qwen-plus",
-    },
-    "kimi": {
-        "name": "Kimi (Moonshot)",
-        "base_url": "https://api.moonshot.cn/v1",
-        "env_key": "MOONSHOT_API_KEY",
-        "default_model": "moonshot-v1-8k",
-    },
-}
-
-
 class LLMClient:
     """
     轻量 LLM 客户端：只做 message 转发
@@ -51,66 +22,66 @@ class LLMClient:
         model: Optional[str] = None,
         config_file: Optional[str] = None,
     ):
-        provider = provider.lower()
-        if provider not in PROVIDERS:
-            raise ValueError(
-                f"不支持的提供商: {provider}，可选: {', '.join(PROVIDERS.keys())}"
-            )
+        """
+        provider: 提供商标识（对应 llm_config.json 中的 key，或仅作显示用）
+        所有连接参数均来自配置文件或环境变量，不再内置任何提供商预设：
+          - api_key    : 参数 > 配置文件 api_key > 环境变量（env_key / LLM_API_KEY）
+          - base_url   : 配置文件 base_url > 环境变量 LLM_BASE_URL
+          - model      : 参数 > 配置文件 model > 环境变量 LLM_MODEL
+        """
+        self.provider = provider.lower()
 
-        self.provider = provider
-        self.cfg = PROVIDERS[provider]
+        cfg = self._load_provider_config(config_file, self.provider)
+        if not isinstance(cfg, dict):
+            cfg = None
+        env_key = cfg.get("env_key") if cfg else None
 
-        # 获取 API Key：参数 > 配置文件 > 环境变量
+        # ---- API Key: 参数 > 配置文件 > 环境变量 ----
         self.api_key = api_key
-        if not self.api_key and config_file:
-            self.api_key = self._read_config(config_file, provider, "api_key")
+        if not self.api_key and cfg:
+            self.api_key = cfg.get("api_key")
         if not self.api_key:
-            self.api_key = os.environ.get(self.cfg["env_key"])
+            self.api_key = os.environ.get(env_key or "LLM_API_KEY")
         if not self.api_key:
             raise ValueError(
-                f"未配置 {self.cfg['name']} 的 API Key\n"
-                f"  方式1: 设置环境变量 {self.cfg['env_key']}\n"
-                f"  方式2: 在 llm_config.json 中配置\n"
+                f"未配置 {self.provider} 的 API Key\n"
+                f"  方式1: 在 llm_config.json 中配置 api_key\n"
+                f"  方式2: 设置环境变量 {env_key or 'LLM_API_KEY'}\n"
                 f"  方式3: 初始化时传入 api_key 参数"
             )
 
-        # 获取模型名
+        # ---- base_url: 配置文件 > 环境变量 ----
+        self.base_url = (cfg.get("base_url") if cfg else None) \
+            or os.environ.get("LLM_BASE_URL")
+        if not self.base_url:
+            raise ValueError(
+                f"未配置 {self.provider} 的 base_url\n"
+                f"  方式1: 在 llm_config.json 中配置 base_url\n"
+                f"  方式2: 设置环境变量 LLM_BASE_URL"
+            )
+
+        # ---- 模型名: 参数 > 配置文件 > 环境变量 ----
         self.model = model
-        if not self.model and config_file:
-            self.model = self._read_config(config_file, provider, "model")
+        if not self.model and cfg:
+            self.model = cfg.get("model")
         if not self.model:
-            self.model = self.cfg["default_model"]
+            self.model = os.environ.get("LLM_MODEL")
+        if not self.model:
+            raise ValueError(
+                f"未配置 {self.provider} 的模型名\n"
+                f"  方式1: 在 llm_config.json 中配置 model\n"
+                f"  方式2: 设置环境变量 LLM_MODEL\n"
+                f"  方式3: 初始化时传入 model 参数"
+            )
+
+        # 显示名称（用于日志/健康检查），默认取提供商标识
+        self.provider_name = (cfg.get("name") if cfg else None) or self.provider
 
         # 创建 OpenAI 客户端
         self.client = OpenAI(
             api_key=self.api_key,
-            base_url=self.cfg["base_url"],
+            base_url=self.base_url,
         )
-
-    def chat(
-        self,
-        messages: List[Dict[str, str]],
-        temperature: float = 0.3,
-        max_tokens: int = 512,
-    ) -> str:
-        """
-        转发 messages 给 LLM，返回响应文本
-
-        Args:
-            messages: [{"role": "system/user/assistant", "content": "..."}]
-            temperature: 温度
-            max_tokens: 最大 token
-
-        Returns:
-            LLM 响应文本
-        """
-        resp = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        return resp.choices[0].message.content or ""
 
     def chat_stream(
         self,
@@ -143,43 +114,25 @@ class LLMClient:
             if delta and delta.content:
                 yield delta.content
 
-    def extract_json(self, text: str) -> Optional[Dict]:
-        """从文本中提取 JSON 对象（容错处理）"""
-        text = text.strip()
-        # 去除可能的 markdown 代码块标记
-        if text.startswith("```"):
-            lines = text.split("\n")
-            lines = [l for l in lines if not l.strip().startswith("```")]
-            text = "\n".join(lines).strip()
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            start = text.find("{")
-            end = text.rfind("}") + 1
-            if start != -1 and end > start:
-                try:
-                    return json.loads(text[start:end])
-                except json.JSONDecodeError:
-                    pass
-        return None
-
     def get_info(self) -> Dict[str, str]:
         """获取客户端信息"""
         return {
             "provider": self.provider,
-            "provider_name": self.cfg["name"],
+            "provider_name": self.provider_name,
             "model": self.model,
-            "base_url": self.cfg["base_url"],
+            "base_url": self.base_url,
         }
 
     @staticmethod
-    def _read_config(config_file: str, provider: str, field: str) -> Optional[str]:
-        """从 llm_config.json 读取字段"""
-        if not os.path.exists(config_file):
+    def _load_provider_config(config_file: str, provider: str) -> Optional[dict]:
+        """从 llm_config.json 读取指定提供商的配置（无配置时返回 None）"""
+        if not config_file or not os.path.exists(config_file):
             return None
         try:
             with open(config_file, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
-            return cfg.get(provider, {}).get(field)
         except (json.JSONDecodeError, IOError):
             return None
+        if not isinstance(cfg, dict):
+            return None
+        return cfg.get(provider)

@@ -601,8 +601,21 @@ class TranslateApp:
     def quit(self):
         self._close_popup()
         if self.icon:
-            self.icon.stop()
-        self.root.after(100, self.root.destroy)
+            try:
+                self.icon.stop()
+            except Exception:
+                pass
+        # 主线程（Ctrl+C）直接销毁；其他线程交给事件循环处理
+        if threading.current_thread() is threading.main_thread():
+            try:
+                self.root.destroy()
+            except Exception:
+                pass
+        else:
+            try:
+                self.root.after(0, self.root.destroy)
+            except Exception:
+                pass
 
     # ---- 运行 ----
     def run(self):
@@ -635,7 +648,18 @@ class TranslateApp:
         log.info("后端: %s", BACKEND_URL)
         log.info("模式: %s", TRANSLATE_MODES[self.mode])
 
-        self.root.mainloop()
+        # 用轮询代替 mainloop()：Tk 的 C 事件循环阻塞时不会及时响应
+        # 控制台 Ctrl+C（Windows 上等待窗口消息，信号无法送达），
+        # 轮询可保证 KeyboardInterrupt 能被正常捕获并退出
+        try:
+            while True:
+                self.root.update()
+                time.sleep(0.05)
+        except KeyboardInterrupt:
+            log.info("收到 Ctrl+C，正在退出...")
+            self.quit()
+        except tk.TclError:
+            pass  # root 已销毁（如托盘菜单"退出"）
 
     def _run_hotkey(self, mods, vk):
         listener = HotkeyListener(mods, vk, self.on_hotkey)

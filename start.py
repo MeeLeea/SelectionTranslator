@@ -13,25 +13,35 @@ import urllib.request
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
+sys.path.insert(0, os.path.join(_HERE, "src"))
 
 # 初始化日志系统
-from src.logger import setup_logging
+from logger import setup_logging
 setup_logging()
 
-from src.config import BACKEND_HOST, BACKEND_PORT
+from config import BACKEND_HOST, BACKEND_PORT
 
 HEALTH_URL = f"http://{BACKEND_HOST}:{BACKEND_PORT}/health"
 
 
 def wait_backend(timeout=15):
-    """等待后端服务就绪"""
+    """等待后端服务就绪
+
+    返回:
+      "ok"      - 后端就绪
+      "error"   - 后端启动失败（立即返回）
+      "timeout" - 超时未就绪
+    """
+    from backend import SERVER_START_ERROR
     for _ in range(int(timeout / 0.2)):
+        if SERVER_START_ERROR is not None:
+            return "error"
         try:
             urllib.request.urlopen(HEALTH_URL, timeout=1)
-            return True
+            return "ok"
         except Exception:
             time.sleep(0.2)
-    return False
+    return "timeout"
 
 
 def main():
@@ -43,19 +53,23 @@ def main():
 
     # 1. 启动后端（守护线程）
     print("\n[启动] 正在启动后端翻译服务...")
-    from src.backend import run_server
+    from backend import run_server
     backend_thread = threading.Thread(target=run_server, daemon=True)
     backend_thread.start()
 
     # 2. 等待后端就绪
-    if wait_backend():
+    status = wait_backend()
+    if status == "ok":
         print("[启动] 后端就绪 ✓")
+    elif status == "error":
+        print("[启动] 错误: 后端启动失败，程序退出")
+        sys.exit(1)
     else:
         print("[启动] 警告: 后端未在 15 秒内就绪（前端仍会启动，但翻译将不可用）")
 
     # 3. 启动前端（主线程，阻塞）
     print("[启动] 正在启动前端界面...")
-    from src.frontend import TranslateApp
+    from frontend import TranslateApp
     app = TranslateApp()
     app.run()
 

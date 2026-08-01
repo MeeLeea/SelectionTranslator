@@ -21,8 +21,8 @@ BACKEND_PORT = 9988
 # ===== 前端 - 触发方式 =====
 # 全局键盘热键（选中文字后按下热键触发翻译）
 # 支持格式: ctrl+alt+d / ctrl+shift+t / alt+z / ctrl+f8 等
-HOTKEY = "ctrl+alt+d"
-HOTKEY_LABEL = "Ctrl + Alt + D"
+HOTKEY = "alt+b"
+HOTKEY_LABEL = "Alt + B"
 
 # ===== 前端 - 弹窗 =====
 POPUP_WIDTH = 440
@@ -45,3 +45,5 @@ TRANSLATE_MODES = {
     "word": "单词详解",
     "sentence": "句子翻译",
 }
+
+TRANS_SECTOR = "电子信息领域、计算机科学领域、人工智能"
