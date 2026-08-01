@@ -1,0 +1,18 @@
+{
+    "zhipu": {
+        "api_key": "",
+        "model": "glm-4-flash"
+    },
+    "deepseek": {
+        "api_key": "",
+        "model": "deepseek-chat"
+    },
+    "qwen": {
+        "api_key": "",
+        "model": "qwen-plus"
+    },
+    "kimi": {
+        "api_key": "",
+        "model": "moonshot-v1-8k"
+    }
+}
